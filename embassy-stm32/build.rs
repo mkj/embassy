@@ -428,6 +428,8 @@ fn main() {
         (("spi", "I2S_WS"), quote!(crate::spi::WsPin)),
         (("i2c", "SDA"), quote!(crate::i2c::SdaPin)),
         (("i2c", "SCL"), quote!(crate::i2c::SclPin)),
+        (("i3c", "SDA"), quote!(crate::i3c::SdaPin)),
+        (("i3c", "SCL"), quote!(crate::i3c::SclPin)),
         (("rcc", "MCO_1"), quote!(crate::rcc::McoPin)),
         (("rcc", "MCO_2"), quote!(crate::rcc::McoPin)),
         (("rcc", "MCO"), quote!(crate::rcc::McoPin)),
@@ -694,6 +696,8 @@ fn main() {
         (("spi", "TX"), quote!(crate::spi::TxDma)),
         (("i2c", "RX"), quote!(crate::i2c::RxDma)),
         (("i2c", "TX"), quote!(crate::i2c::TxDma)),
+        (("i3c", "RX"), quote!(crate::i3c::RxDma)),
+        (("i3c", "TX"), quote!(crate::i3c::TxDma)),
         (("dcmi", "DCMI"), quote!(crate::dcmi::FrameDma)),
         (("dcmi", "PSSI"), quote!(crate::dcmi::FrameDma)),
         // SDMMCv1 uses the same channel for both directions, so just implement for RX

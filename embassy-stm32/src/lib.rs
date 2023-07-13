@@ -35,6 +35,8 @@ pub mod exti;
 pub mod fmc;
 #[cfg(i2c)]
 pub mod i2c;
+#[cfg(i3c)]
+pub mod i3c;
 
 #[cfg(crc)]
 pub mod crc;
