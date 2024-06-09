@@ -5,6 +5,8 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
+#![feature(impl_trait_in_assoc_type)]
+
 use core::str::from_utf8;
 
 use cyw43_pio::PioSpi;
@@ -35,7 +37,21 @@ async fn wifi_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'stati
 
 #[embassy_executor::task]
 async fn net_task(stack: &'static Stack<cyw43::NetDriver<'static>>) -> ! {
-    stack.run().await
+    // waste some kilobytes
+
+    // 70000 always succeeds
+    // let x = [99u8; 70000];
+
+    // Somewhere near the boundary case, should fail
+    let x = [99u8; 91000];
+
+    // Definitely too large for arena
+    // let x = [99u8; 112000];
+
+    core::hint::black_box(x);
+    let r = stack.run().await;
+    core::hint::black_box(x);
+    r
 }
 
 #[embassy_executor::main]

@@ -92,7 +92,11 @@ pub mod _export {
             let bytes_left = (end as usize) - (ptr as usize);
             let align_offset = (ptr as usize).next_multiple_of(layout.align()) - (ptr as usize);
 
+            warn!("alloc {}, {} bytes left -> {}. {}", layout.size(), bytes_left,
+                bytes_left - (align_offset + layout.size()),
+                core::any::type_name::<T>());
             if align_offset + layout.size() > bytes_left {
+                warn!("ran out! {} {} {}", align_offset, layout.size(), bytes_left );
                 panic!("embassy-executor: task arena is full. You must increase the arena size, see the documentation for details: https://docs.embassy.dev/embassy-executor/");
             }
 
