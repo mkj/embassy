@@ -5,6 +5,8 @@
 #[cfg_attr(any(i2c_v2, i2c_v3), path = "v2.rs")]
 mod _version;
 
+mod target;
+
 use core::future::Future;
 use core::iter;
 use core::marker::PhantomData;
@@ -24,6 +26,8 @@ use crate::rcc::{RccInfo, SealedRccPeripheral};
 use crate::time::Hertz;
 use crate::{interrupt, peripherals};
 
+pub use target::{I2cMulti, I2cTarget, I2cController, TargetAddress, Command, CommandGuard};
+
 /// I2C error.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -42,6 +46,8 @@ pub enum Error {
     Overrun,
     /// Zero-length transfers are not allowed.
     ZeroLengthTransfer,
+    /// Invalid I2C address
+    BadAddress,
 }
 
 impl core::fmt::Display for Error {
@@ -54,6 +60,7 @@ impl core::fmt::Display for Error {
             Self::Crc => "CRC Mismatch",
             Self::Overrun => "Buffer Overrun",
             Self::ZeroLengthTransfer => "Zero-Length Transfers are not allowed",
+            Self::BadAddress => "Bad Address",
         };
 
         write!(f, "{}", message)
@@ -277,12 +284,16 @@ impl Timeout {
 struct State {
     #[allow(unused)]
     waker: AtomicWaker,
+
+    #[allow(unused)]
+    target_waker: AtomicWaker,
 }
 
 impl State {
     const fn new() -> Self {
         Self {
             waker: AtomicWaker::new(),
+            target_waker: AtomicWaker::new(),
         }
     }
 }
@@ -383,6 +394,7 @@ impl embedded_hal_1::i2c::Error for Error {
             Self::Crc => embedded_hal_1::i2c::ErrorKind::Other,
             Self::Overrun => embedded_hal_1::i2c::ErrorKind::Overrun,
             Self::ZeroLengthTransfer => embedded_hal_1::i2c::ErrorKind::Other,
+            Self::BadAddress => embedded_hal_1::i2c::ErrorKind::Other,
         }
     }
 }

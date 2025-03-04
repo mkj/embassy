@@ -11,20 +11,41 @@ use crate::pac::i2c;
 
 pub(crate) unsafe fn on_interrupt<T: Instance>() {
     let regs = T::info().regs;
-    let isr = regs.isr().read();
 
-    if isr.tcr() || isr.tc() || isr.nackf() || isr.berr() || isr.arlo() || isr.ovr() {
+    let isr = critical_section::with(|_| {
+        let isr = regs.isr().read();
+        // disable interrupts for set event flags, woken routines will clear the
+        // flags and re-enable interrupts.
+        regs.cr1().modify(|w| {
+            if isr.tc() || isr.tcr() {
+                w.set_tcie(false);
+            }
+            if isr.nackf() {
+                w.set_nackie(false);
+            }
+            if isr.berr() || isr.arlo() || isr.ovr() {
+                w.set_errie(false);
+            }
+            if isr.stopf() {
+                w.set_stopie(false);
+            }
+            if isr.rxne() {
+                w.set_rxie(false);
+            }
+            if isr.addr() {
+                w.set_addrie(false);
+            }
+        });
+        isr
+    });
+
+    if isr.tcr() || isr.tc() || isr.nackf() || isr.berr() || isr.arlo() || isr.ovr() || isr.addr() {
         T::state().waker.wake();
     }
-    critical_section::with(|_| {
-        regs.cr1().modify(|w| {
-            // The flag can only be cleared by writting to nbytes, we won't do that here
-            w.set_tcie(false);
-            // Error flags are to be read in the routines, so we also don't clear them here
-            w.set_nackie(false);
-            w.set_errie(false);
-        });
-    });
+
+    if isr.stopf() || isr.addr() || isr.berr() || isr.arlo() {
+        T::state().target_waker.wake();
+    }
 }
 
 impl<'d, M: Mode> I2c<'d, M> {
@@ -142,6 +163,8 @@ impl<'d, M: Mode> I2c<'d, M> {
 
     fn master_continue(info: &'static Info, length: usize, reload: bool, timeout: Timeout) -> Result<(), Error> {
         assert!(length < 256 && length > 0);
+
+        trace!("master_continue len {} reload {}", length, reload);
 
         while !info.regs.isr().read().tcr() {
             timeout.check()?;
@@ -447,6 +470,12 @@ impl<'d> I2c<'d, Async> {
     ) -> Result<(), Error> {
         let total_len = write.len();
 
+        trace!("ctrl write dma internal {:02x} isr {:08x} cr1 {:08x} cr2 {:08x}", address, 
+            self.info.regs.isr().read().0,
+            self.info.regs.cr1().read().0,
+            self.info.regs.cr2().read().0,
+            );
+
         let dma_transfer = unsafe {
             let regs = self.info.regs;
             regs.cr1().modify(|w| {
@@ -467,8 +496,10 @@ impl<'d> I2c<'d, Async> {
         let on_drop = OnDrop::new(|| {
             let regs = self.info.regs;
             let isr = regs.isr().read();
+            trace!("ctrl ondrop {:02x} isr {} {:08x}", address, line!(),
+                self.info.regs.isr().read().0);
             regs.cr1().modify(|w| {
-                if last_slice || isr.nackf() || isr.arlo() || isr.berr() || isr.ovr() {
+                if last_slice || isr.nackf() || isr.arlo() || isr.berr() || isr.ovr() || isr.addr() {
                     w.set_txdmaen(false);
                 }
                 w.set_tcie(false);
@@ -487,11 +518,19 @@ impl<'d> I2c<'d, Async> {
             self.state.waker.register(cx.waker());
 
             let isr = self.info.regs.isr().read();
-
+            // trace!("ctrl poll {:02x} isr {:08x} cr1 {:08x} cr2 {:08x}", address,
+            //     isr.0,
+            //     self.info.regs.cr1().read().0,
+            //     self.info.regs.cr2().read().0,
+            // );
             if isr.nackf() {
                 return Poll::Ready(Err(Error::Nack));
             }
             if isr.arlo() {
+                return Poll::Ready(Err(Error::Arbitration));
+            }
+            if isr.addr() {
+                // Addressed as target. I2CTarget will handle that.
                 return Poll::Ready(Err(Error::Arbitration));
             }
             if isr.berr() {
@@ -500,6 +539,7 @@ impl<'d> I2c<'d, Async> {
             if isr.ovr() {
                 return Poll::Ready(Err(Error::Overrun));
             }
+            trace!("ctrl {:02x} rem {} total {}", address, remaining_len, total_len);
 
             if remaining_len == total_len {
                 if first_slice {
