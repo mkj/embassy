@@ -1176,11 +1176,7 @@ impl<'d> embassy_usb_driver::EndpointIn for Endpoint<'d, In> {
             .await
         }
 
-        // ERRATA: Transmit data FIFO is corrupted when a write sequence to the FIFO is interrupted with
-        // accesses to certain OTG_FS registers.
-        //
-        // Prevent the interrupt (which might poke FIFOs) from executing while copying data to FIFOs.
-        critical_section::with(|_| {
+        let f = || {
             // Setup transfer size
             self.regs.dieptsiz(index).write(|w| {
                 w.set_mcnt(1);
@@ -1215,6 +1211,18 @@ impl<'d> embassy_usb_driver::EndpointIn for Endpoint<'d, In> {
                 tmp[0..chunk.len()].copy_from_slice(chunk);
                 self.regs.fifo(index).write_value(regs::Fifo(u32::from_ne_bytes(tmp)));
             }
+        };
+
+        // ERRATA: Transmit data FIFO is corrupted when a write sequence to the FIFO is interrupted with
+        // accesses to certain OTG_FS registers.
+        //
+        // Prevent the interrupt (which might poke FIFOs) from executing while copying data to FIFOs.
+        self.regs.gahbcfg().write(|w| {
+            w.set_gint(false); // mask global interrupt
+        });
+        f();
+        self.regs.gahbcfg().write(|w| {
+            w.set_gint(true); // mask global interrupt
         });
 
         trace!("write done ep={:?}", self.info.addr);
