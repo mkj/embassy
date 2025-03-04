@@ -1,8 +1,13 @@
 [target.thumbv7em-none-eabihf]
-runner = 'probe-rs run --chip STM32H7S3L8Hx'
+runner = 'probe-rs run --chip STM32H7S3L8Hx --probe 0483:3754 --no-location'
 
 [build]
 target = "thumbv7em-none-eabihf" # Cortex-M4F and Cortex-M7F (with FPU)
 
 [env]
 DEFMT_LOG = "trace"
+
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# (..)
+linker = "flip-link"
+
