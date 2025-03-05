@@ -47,7 +47,7 @@ async fn main(_spawner: Spawner) {
         config,
     );
 
-    let mut i2c2 = I2c::new(
+    let i2c2 = I2c::new(
         p.I2C2,
         // SCL, Nucleo CN9 pin 19
         p.PF1,
@@ -61,9 +61,9 @@ async fn main(_spawner: Spawner) {
     );
 
     let mut multi1 = i2c::I2cMulti::new(i2c1);
-    let (mut con1, mut tar1) = multi1.split(TargetAddress(ADDRESS1)).await.unwrap();
+    let (mut con1, mut tar1) = multi1.split(TargetAddress(ADDRESS1)).unwrap();
     let mut multi2 = i2c::I2cMulti::new(i2c2);
-    let (mut con2, mut tar2) = multi2.split(TargetAddress(ADDRESS2)).await.unwrap();
+    let (mut con2, mut tar2) = multi2.split(TargetAddress(ADDRESS2)).unwrap();
 
     let mut rng = rng::Rng::new(p.RNG, Irqs);
 
@@ -90,7 +90,7 @@ async fn main(_spawner: Spawner) {
     // select::select3(print, run_tar1, run_con2).await;
 }
 async fn listen(tar: &mut i2c::I2cTarget<'_, '_>, name: &str, seed: u32) -> ! {
-    let mut random = XorShift::new(seed);
+    let random = XorShift::new(seed);
     // let seq = [40, 10, 40, 40, 10].iter().cloned().chain(core::iter::repeat(10));
     // let seq = [40, 10, 40, 40];
     // let seq = seq.iter().cycle().cloned();
@@ -103,14 +103,13 @@ async fn listen(tar: &mut i2c::I2cTarget<'_, '_>, name: &str, seed: u32) -> ! {
 
         match tar.listen(buf).await {
             Ok(CommandGuard {
-                command: Command::Write { len, pec_good },
+                command: Command::Write { len },
                 ..
             }) => {
                 info!(
-                    "target {} got write len={} pec_good {}: {:02x}",
+                    "target {} got write len={}: {:02x}",
                     name,
                     len,
-                    pec_good,
                     buf[..len]
                 );
             }

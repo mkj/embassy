@@ -17,8 +17,10 @@ type BlockMutex<T> = Mutex<CriticalSectionRawMutex, T>;
 /// I2C Address
 ///
 /// Currently only 7-bit supported
+#[derive(Copy, Clone, Debug)]
 pub struct TargetAddress(pub u8);
 
+#[cfg(feature = "defmt")]
 impl defmt::Format for TargetAddress {
     fn format(&self, fmt: defmt::Formatter) {
         defmt::write!(fmt, "TargetAddress({:#02x})", self.0)
@@ -35,20 +37,19 @@ impl<'d> I2cMulti<'d> {
     }
 
     /// Create separate Target/Controller instances
-    pub async fn split(
+    pub fn split(
         &mut self,
         own_addr1: TargetAddress,
     ) -> Result<(I2cController<'_, 'd>, I2cTarget<'_, 'd>), Error> {
         let c = I2cController { multi: self };
-        let t = I2cTarget::new(self, own_addr1).await?;
-
+        let t = I2cTarget::new(self, own_addr1)?;
         Ok((c, t))
     }
 }
 
 pub enum Command {
     Read,
-    Write { len: usize, pec_good: bool },
+    Write { len: usize },
     WriteRead(usize),
 }
 
@@ -75,12 +76,13 @@ pub struct I2cTarget<'s, 'd> {
     drop_regs: &'static crate::pac::i2c::I2c,
 }
 impl<'s, 'd> I2cTarget<'s, 'd> {
-    async fn new(multi: &'s I2cMulti<'d>, own_addr1: TargetAddress) -> Result<Self, Error> {
+    // Always called with an unlocked `multi.i2c`, or will panic.
+    fn new(multi: &'s I2cMulti<'d>, own_addr1: TargetAddress) -> Result<Self, Error> {
         if (own_addr1.0 & !0x7f) != 0 {
             return Err(Error::BadAddress);
         }
 
-        let i2c = multi.i2c.lock().await;
+        let i2c = multi.i2c.try_lock().expect("Called unlocked from .split()");
         let r = i2c.info.regs;
 
         // Own Address
@@ -206,13 +208,17 @@ impl<'s, 'd> I2cTarget<'s, 'd> {
             r.cr2().read().0,
         );
 
+        // Received address goes in first byte
+        let (dest_byte, dmabuf) = buf.split_first_mut().expect("buf is non-empty");
+        *dest_byte = r.isr().read().addcode() << 1;
+
         // Provide receive buffer to DMA
-        let total_buf = buf.len();
+        let total_buf = dmabuf.len();
         r.cr1().modify(|w| {
             w.set_rxdmaen(true);
         });
         let rxptr = r.rxdr().as_ptr() as *mut u8;
-        let mut dma_transfer = unsafe { i2c.rx_dma.as_mut().unwrap().read(rxptr, buf, Default::default()) };
+        let mut dma_transfer = unsafe { i2c.rx_dma.as_mut().unwrap().read(rxptr, dmabuf, Default::default()) };
 
         r.icr().write(|w| {
             w.set_stopcf(true);
@@ -253,10 +259,11 @@ impl<'s, 'd> I2cTarget<'s, 'd> {
                 fence(Ordering::SeqCst);
                 let rem = dma_transfer.get_remaining_transfers() as usize;
                 trace!("rem {} buf {} diff {}", rem, total_buf, total_buf - rem);
-                let len = total_buf.checked_sub(rem).expect("remaining <= total");
+                // +1 for initial address byte
+                let len = 1 + total_buf.checked_sub(rem).expect("remaining <= total");
 
                 let c = CommandGuard {
-                    command: Command::Write { len, pec_good: false },
+                    command: Command::Write { len },
                     i2c_guard: None,
                 };
                 return Ok(c);
