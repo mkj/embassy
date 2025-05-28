@@ -27,6 +27,12 @@ impl defmt::Format for TargetAddress {
     }
 }
 
+impl core::fmt::Display for TargetAddress {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter) -> Result<(), core::fmt::Error> {
+        write!(fmt, "TargetAddress({:#02x})", self.0)
+    }
+}
+
 pub struct I2cMulti<'d> {
     i2c: Mutex<CriticalSectionRawMutex, I2c<'d, Async>>,
 }
@@ -126,11 +132,11 @@ impl<'s, 'd> I2cTarget<'s, 'd> {
                 // Get the lock, in case a Controller is finishing a transaction
                 let lock = pin!(self.multi.i2c.lock());
                 let Poll::Ready(i2c) = lock.poll(cx) else {
-                    trace!("target {:02x} lock nope", self.own_addr1);
+                    trace!("target {} lock nope", self.own_addr1);
                     return Poll::Pending;
                 };
 
-                trace!("target {:02x} lock nope", self.own_addr1);
+                trace!("target {} lock got", self.own_addr1);
                 i2c.state.target_waker.register(cx.waker());
                 // Wake when addressed
                 i2c.info.regs.cr1().modify(|w| {
@@ -140,7 +146,7 @@ impl<'s, 'd> I2cTarget<'s, 'd> {
                 if i2c.info.regs.isr().read().addr() {
                     // Keep the i2c MutexGuard once addressed.
                     // trace!("target ready");
-                    trace!("target addressed {:02x}", self.own_addr1);
+                    trace!("target addressed {}", self.own_addr1);
                     return Poll::Ready(i2c);
                 }
 
@@ -150,7 +156,7 @@ impl<'s, 'd> I2cTarget<'s, 'd> {
                 //     w.set_stopcf(true);
                 // });
                 // trace!("target pending");
-                trace!("target {:02x} locked, addr pending", self.own_addr1);
+                trace!("target {} locked, addr pending", self.own_addr1);
                 Poll::Pending
             })
             .await;
@@ -371,11 +377,11 @@ pub struct I2cController<'s, 'd> {
 
 impl<'s, 'd> I2cController<'s, 'd> {
     pub async fn write(&mut self, address: u8, write: &[u8]) -> Result<(), Error> {
-        trace!("controller lock wait {:02x}", address);
+        trace!("controller lock wait {}", address);
         let mut i2c = self.multi.i2c.lock().await;
-        trace!("controller got {:02x}", address);
+        trace!("controller got {}", address);
         let r = i2c.write(address, write).await;
-        trace!("controller drop {:02x}", address);
+        trace!("controller drop {}", address);
         r
     }
 
@@ -399,7 +405,7 @@ impl<'s, 'd> embedded_hal_async::i2c::I2c for I2cController<'s, 'd> {
 
     async fn write(&mut self, address: u8, write: &[u8]) -> Result<(), Self::Error> {
         self.write(address, write).await.map_err(|e| {
-            warn!("ctrl {:02x} write error {}", address, e);
+            warn!("ctrl {} write error {}", address, e);
             e
         })
     }
