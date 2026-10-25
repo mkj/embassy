@@ -2,7 +2,7 @@
 
 use crate::Peri;
 use crate::clocks::clk_sys_freq;
-use crate::gpio::Level;
+use crate::gpio::{Drive, Level};
 use crate::pio::{
     Common, Config, Direction, Instance, LoadedProgram, PioPin, ShiftConfig, ShiftDirection, StateMachine,
 };
@@ -106,7 +106,9 @@ impl<'d, PIO: Instance, const SM: usize> PioOneWire<'d, PIO, SM> {
         pin: Peri<'d, impl PioPin>,
         program: &PioOneWireProgram<'d, PIO>,
     ) -> Self {
-        let pin = common.make_pio_pin(pin);
+        let mut pin = common.make_pio_pin(pin);
+
+        pin.set_drive_strength(Drive::_12mA);
 
         sm.set_pin_dirs(Direction::In, &[&pin]);
         sm.set_pins(Level::Low, &[&pin]);
