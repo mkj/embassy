@@ -16,6 +16,27 @@ enum Interrupt {
     Receive = 0b00100_u8,
 }
 
+/// Configuration for PHY operation mode.
+#[derive(Clone, Copy, Debug)]
+pub enum PhyMode {
+    /// Use PMODE hardware pins for configuration (default)
+    Pins,
+    /// 10-BASE-T, Half-duplex, Auto-negotiation disabled
+    Half10,
+    /// 10-BASE-T, Full-duplex, Auto-negotiation disabled
+    Full10,
+    /// 100-BASE-T, Half-duplex, Auto-negotiation disabled
+    Half100,
+    /// 100-BASE-T, Full-duplex, Auto-negotiation disabled
+    Full100,
+    /// 100-BASE-T, Full-duplex, Auto-negotiation enabled
+    Full100AutoNeg,
+    /// All capable, Auto-negotiation enabled
+    AutoNeg,
+    /// Power down mode
+    PowerDown,
+}
+
 /// Wiznet chip in MACRAW mode
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -251,5 +272,23 @@ impl<C: Chip, SPI: SpiDevice> WiznetDevice<C, SPI> {
         let mut link = [0];
         self.bus_read(C::COMMON_PHY_CFG, &mut link).await.ok();
         link[0] & 1 == 1
+    }
+
+    pub async fn set_phy_mode(&mut self, mode: PhyMode) -> Result<(), SPI::Error> {
+        use PhyMode::*;
+        let b = match mode {
+            Pins => 0b0111,
+            Half10 => 0b1000,
+            Full10 => 0b1001,
+            Half100 => 0b1010,
+            Full100 => 0b1011,
+            Full100AutoNeg => 0b1100,
+            PowerDown => 0b1110,
+            AutoNeg => 0b1111,
+        };
+        let mut cfg = [0];
+        self.bus_read(C::COMMON_PHY_CFG, &mut cfg).await?;
+        cfg[0] = cfg[0] & 0b10000111 & (b << 3);
+        self.bus_write(C::COMMON_PHY_CFG, &cfg).await
     }
 }

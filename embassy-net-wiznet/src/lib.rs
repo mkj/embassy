@@ -95,6 +95,15 @@ impl<'d, C: Chip, SPI: SpiDevice, INT: Wait, RST: OutputPin> Runner<'d, C, SPI, 
     }
 }
 
+pub use device::PhyMode;
+
+impl<'d, SPI: SpiDevice, INT: Wait, RST: OutputPin> Runner<'d, chip::W5500, SPI, INT, RST> {
+    /// Set ethernet PHY mode.
+    pub async fn set_phy_mode(&mut self, mode: PhyMode) -> Result<(), SPI::Error> {
+        self.mac.set_phy_mode(mode).await
+    }
+}
+
 /// Create a Wiznet ethernet chip driver for [`embassy-net`](https://crates.io/crates/embassy-net).
 ///
 /// This returns two structs:
